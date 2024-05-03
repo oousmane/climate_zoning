@@ -1,32 +1,58 @@
 library(tidyverse)
 library(gstat)
 library(sf)
-data <- read_csv2("~/Downloads/normale.csv") %>% 
+library(terra)
+library(tidyterra)
+
+data <- read_csv2("normales/std_norm9120.csv") %>% 
   as_tibble() %>% 
   rename(
     rain = Precipitation
   ) %>% 
   select(long,lat, rain)
-data
 
 std_norm9120_network <- data %>% 
   st_as_sf(
     coords = c("long","lat"),
     crs = 4326
   )
-bf_adm0 <- read_sf("/Users/ousmane/Documents/github-project/aez-memoire-code/data-processing/shapefile/bfa_adm_igb/bfa_adm0_igb.shp")
-bf_adm1 <- read_sf("/Users/ousmane/Documents/github-project/aez-memoire-code/data-processing/shapefile/bfa_adm_igb/bfa_adm1_igb.shp")
+bf_adm0 <- read_sf("bfa_adm_igb/bfa_adm0_igb.shp")
+bf_adm1 <- read_sf("bfa_adm_igb/bfa_adm1_igb.shp")
 
-ggplot() +
+# Standard normal network
+
+p <- ggplot() +
   geom_sf(data = bf_adm1, color = "grey",lwd = 0.3)+
   geom_sf(data =bf_adm0, color = "black", fill = NA, lwd = .8 )+
-  geom_sf(data = std_norm9120_network)
-  
+  geom_sf(data = std_norm9120_network, color ="brown")+
+  labs(
+    title = "Distribution des postes pluviométriques",
+    subtitle = "Normale climatique standard | 1991-2020"
+  )+
+  ggthemes::theme_map(base_size = 12)+
+  theme(
+    plot.margin = margin(0,.25,0,0.25),
+    
+  )
 
-# interpolation gstat 
+ggsave(
+  filename = "figs/dist_spatial_stn.png",
+  plot = p,
+  width = 6,
+  height = 4
+)
+# empirical variogram 
 
 v <- variogram(rain~1,std_norm9120_network)
 
+# plot empirical variogram
+ggplot(data = v)+
+  geom_point(aes(x=dist,y =gamma),col = "blue")+
+  labs(
+    x = "distance h [km]",
+    y = expression(gamma~"(h)")
+  )+
+  theme_classic()
 v.fit <- fit.variogram(v,vgm(psill =10000,model = "Gau",nugget = 150)) 
 
 # variogram fitted line (modeled)
@@ -61,8 +87,7 @@ krige_model <- gstat(
 
 krige_res <- predict(krige_model, grid_points)
 
-library(sp)
-data("meuse.grid")
+
 meuse.gridsf <- st_as_sf(meuse.grid, coords = c("x", "y"),
                        crs = 28992)
 krige_res
@@ -85,13 +110,7 @@ ggplot()+
     breaks = c(600,900)
   )+
   geom_sf(data = bf_adm0,fill = NA,col = "red",lwd =1)
-writeRaster(
-  krige_res_raster["var1.var"],
-  filename = "~/Desktop/climate_zoning/kriging_res_var.tif"
-)
 
-pred <- krige_res_raster["var1.pred"]
-library(terra)
 
 class <- c(0,600,1,600,900,2,900,1500,3) %>% 
   matrix(ncol = 3,byrow = 3)
